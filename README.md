@@ -18,6 +18,7 @@ pip install git+https://github.com/Ahmad-SDev/nginx-log-insights
 
 nginx-insights /var/log/nginx/access.log /var/log/nginx/access.log.1.gz
 nginx-insights access.log --top 5 --burst-threshold 120 --burst-window 30
+nginx-insights access.log --since 15m          # only the last 15 minutes: what is hitting us right now?
 tail -n 100000 access.log | nginx-insights --json | jq '.["Request bursts"]'
 ```
 

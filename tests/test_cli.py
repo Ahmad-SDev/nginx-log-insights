@@ -1,7 +1,11 @@
+import argparse
 import gzip
 import json
+from datetime import datetime, timedelta, timezone
 
-from nginx_log_insights.cli import main
+import pytest
+
+from nginx_log_insights.cli import main, parse_duration
 
 LINES = [
     '203.0.113.7 - - [23/Nov/2026:10:15:32 +0000] "GET / HTTP/1.1" 200 512 "-" "curl/8"',
@@ -40,3 +44,28 @@ def test_text_output_has_a_section_per_analyzer(tmp_path, capsys):
 def test_missing_file_exits_with_usage_error(tmp_path, capsys):
     assert main([str(tmp_path / "nope.log")]) == 2
     assert "not found" in capsys.readouterr().err
+
+
+def test_since_keeps_only_recent_requests(tmp_path, capsys):
+    recent = datetime.now(timezone.utc) - timedelta(minutes=2)
+    log = tmp_path / "access.log"
+    log.write_text(
+        LINES[0] + "\n"  # 2026-11-23 10:15, long before the window
+        + f'198.51.100.9 - - [{recent:%d/%b/%Y:%H:%M:%S %z}] "GET /now HTTP/1.1" 200 1 "-" "curl/8"\n'
+    )
+
+    assert main([str(log), "--since", "15m", "--json"]) == 0
+
+    report = json.loads(capsys.readouterr().out)
+    assert report["Summary"]["requests"] == 1
+
+
+@pytest.mark.parametrize(("text", "expected"), [("90s", 90), ("15m", 900), ("2h", 7200), ("1d", 86400)])
+def test_parse_duration(text, expected):
+    assert parse_duration(text) == timedelta(seconds=expected)
+
+
+@pytest.mark.parametrize("text", ["15", "0m", "1w", "abc"])
+def test_parse_duration_rejects_bad_input(text):
+    with pytest.raises(argparse.ArgumentTypeError):
+        parse_duration(text)
